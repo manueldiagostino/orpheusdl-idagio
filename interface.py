@@ -215,8 +215,12 @@ class ModuleInterface:
         # cache the album_data for the track_info
         cache = {'data': {album_data.get('id'): album_data}}
 
-        # get the first composer as an album artist
-        album_artist = [c for c in album_data.get('participants') if c.get('type') == 'composer'][0]
+        # get the first composer as an album artist, with a defensive fallback
+        # to the first credited participant in case the API returns no composer
+        # (e.g. an album that only credits a conductor and soloist).
+        composers = [c for c in album_data.get('participants') if c.get('type') == 'composer']
+        participants = album_data.get('participants') or []
+        album_artist = composers[0] if composers else (participants[0] if participants else {})
 
         return AlbumInfo(
             name=album_data.get('title'),
@@ -241,9 +245,26 @@ class ModuleInterface:
 
         track_data = data[recording_id] if recording_id in data else self.session.get_recording(recording_id)
         # track_is is just needed for the track_extra_kwargs
-        track_id = track_data.get('tracks')[0].get('id')
+        tracks = track_data.get('tracks') or []
+        if not tracks:
+            raise self.exception(
+                f'Recording {recording_id} returned no tracks from the Idagio API'
+            )
+        track_id = tracks[0].get('id')
 
-        album_id = track_data.get('albums')[0]
+        # Some single recordings come back with an empty `albums` list (the
+        # v2.0 metadata endpoint can omit it for recordings that the API no
+        # longer links to an album). Without an album_id we cannot fetch the
+        # album-level metadata that the rest of this function expects
+        # (cover, copyright, tag side data), so refuse early with a clear
+        # error rather than crashing later with IndexError/AttributeError.
+        associated_albums = track_data.get('albums') or []
+        if not associated_albums:
+            raise self.exception(
+                f'Recording {recording_id} has no album association on Idagio; '
+                f'cannot resolve cover/copyright metadata.'
+            )
+        album_id = associated_albums[0]
         album_data = data[album_id] if album_id in data else self.session.get_album(album_id)
 
         # also add a LIVE tag to the track if it's a live track?
@@ -324,13 +345,22 @@ class ModuleInterface:
         # add the track composer to credits_dict
         # credits_dict = {'Composer': [track_data.get('work').get('composer').get('name')]}
 
-        # add all soloists to credits
-        for soloist in track_data.get('soloists'):
-            # check if the dict contains no list, create one
-            if not credits_dict.get(soloist.get('instrument').get('title')):
-                credits_dict[soloist.get('instrument').get('title')] = []
+        # add all soloists to credits; defensively handle missing
+        # instrument/person/title fields so a malformed entry can't take the
+        # whole download down.
+        for soloist in track_data.get('soloists') or []:
+            instrument_title = (soloist.get('instrument') or {}).get('title')
+            person_name = (soloist.get('person') or {}).get('name')
 
-            credits_dict[soloist.get('instrument').get('title')].append(soloist.get('person').get('name'))
+            if not person_name:
+                # No credited performer for this slot; skip rather than crash.
+                continue
+            if not instrument_title:
+                # Anonymous performer with no instrument label; bucket them
+                # under a generic key so the credit still surfaces.
+                instrument_title = 'Performer'
+
+            credits_dict.setdefault(instrument_title, []).append(person_name)
 
         # add all the authors to credits
         for author in track_data.get('work').get('authors'):

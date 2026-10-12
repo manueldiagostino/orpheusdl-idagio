@@ -86,6 +86,20 @@ loaded module. You'll find the configuration file here: `config/settings.json`
 * "low": same as "minimum"
 * "minimum": AAC 160 kbit/s
 
+> **Note on `formatting` templates.** `global.formatting.album_format`,
+> `track_filename_format` and `single_full_path_format` are interpolated by
+> OrpheusDL against the `AlbumInfo` and `TrackInfo` dataclasses (see
+> `orpheusdl/utils/models.py`). The only track/album name field exposed is
+> `name` — there is no `album` field on `AlbumInfo` and no `title` field on
+> `TrackInfo`. Using `{album}` or `{title}` in a template raises
+> `KeyError` and aborts the download. The upstream defaults are:
+>
+> ```json5
+> "album_format": "{name}{explicit}",
+> "track_filename_format": "{track_number}. {name}",
+> "single_full_path_format": "{name}"
+> ```
+
 ### Idagio
 ```json5
 "idagio": {
