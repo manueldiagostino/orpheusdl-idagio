@@ -330,7 +330,7 @@ class ModuleInterface:
             if not credits_dict.get(soloist.get('instrument').get('title')):
                 credits_dict[soloist.get('instrument').get('title')] = []
 
-            credits_dict[soloist.get('instrument').get('title')].append(credits_dict[soloist.get('person').get('name')])
+            credits_dict[soloist.get('instrument').get('title')].append(soloist.get('person').get('name'))
 
         # add all the authors to credits
         for author in track_data.get('work').get('authors'):
