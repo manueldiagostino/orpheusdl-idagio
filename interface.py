@@ -222,6 +222,19 @@ class ModuleInterface:
         participants = album_data.get('participants') or []
         album_artist = composers[0] if composers else (participants[0] if participants else {})
 
+        # The Idagio v2 metadata endpoint models a recording as a complete
+        # performance (e.g. one concerto ≈ 30 min) and lists its internal
+        # pieces/movements as separate track entries that all share the
+        # same `recording.id`. If we forward the full `tracks` list to
+        # orpheus we get duplicate downloads of the same encrypted stream
+        # (e.g. the Rachmaninov 3 + Tchaikovsky 1 album yields three
+        # bit-identical copies per concerto), wasting bandwidth and
+        # leaving Navidrome with N tracks that all share the same FLAC
+        # title and content. Dedupe by recording.id while preserving the
+        # original order so track numbering stays stable.
+        recording_ids = [t.get('recording', {}).get('id') for t in tracks]
+        unique_recording_ids = list(dict.fromkeys(recording_ids))
+
         return AlbumInfo(
             name=album_data.get('title'),
             # use copyrightYear instead of publishDate?
@@ -231,7 +244,7 @@ class ModuleInterface:
             # always use first participant?
             artist=album_artist.get('name'),
             artist_id=album_artist.get('id'),
-            tracks=[t.get('recording').get('id') for t in tracks],
+            tracks=unique_recording_ids,
             booklet_url=album_data.get('bookletUrl'),
             track_extra_kwargs=cache
         )
